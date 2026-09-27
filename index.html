@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيق صلاتي - مواقيت الصلاة</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-color: #10b981;
+            --accent-glow: rgba(16, 185, 129, 0.2);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 450px;
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            color: var(--accent-color);
+            margin-bottom: 5px;
+        }
+
+        .location-box {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        /* Next Prayer Counter */
+        .next-prayer-card {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border-radius: 18px;
+            padding: 20px;
+            text-align: center;
+            color: #ffffff;
+            box-shadow: 0 10px 15px -3px var(--accent-glow);
+        }
+
+        .next-prayer-card .title {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .next-prayer-card .time {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .next-prayer-card .countdown {
+            font-size: 0.9rem;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 6px 12px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+
+        /* Prayer Times List */
+        .prayers-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .prayer-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 18px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .prayer-item.active {
+            border-color: var(--accent-color);
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .prayer-name {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .prayer-time {
+            font-weight: 700;
+            color: var(--accent-color);
+            font-size: 1.1rem;
+        }
+
+        .prayer-item.active .prayer-time {
+            color: #34d399;
+        }
+
+        /* Dates Header */
+        .date-container {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            padding: 0 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+        }
+
+        .loader {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="header">
+        <h1>صلاتي</h1>
+        <div class="location-box" id="location">جاري تحديد الموقع...</div>
+    </div>
+
+    <div class="date-container">
+        <span id="gregorian-date">--</span>
+        <span id="hijri-date">--</span>
+    </div>
+
+    <div class="next-prayer-card">
+        <div class="title">الصلاة القادمة: <strong id="next-prayer-name">--</strong></div>
+        <div class="time" id="next-prayer-time">00:00</div>
+        <div class="countdown" id="countdown">متبقي: --:--:--</div>
+    </div>
+
+    <div class="prayers-list" id="prayers-list">
+        <div class="loader">جاري تحميل مواقيت الصلاة...</div>
+    </div>
+</div>
+
+<script>
+    const prayerNames = {
+        Fajr: "الفجر",
+        Sunrise: "الشروق",
+        Dhuhr: "الظهر",
+        Asr: "العصر",
+        Maghrib: "المغرب",
+        Isha: "العشاء"
+    };
+
+    let prayerTimings = {};
+    let nextPrayerKey = '';
+
+    // 1. Get User Location
+    function initApp() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    fetchPrayerTimes(lat, lon);
+                },
+                error => {
+                    // Fallback to default location (Mecca) if permission denied
+                    document.getElementById('location').innerText = "مكة المكرمة (افتراضي)";
+                    fetchPrayerTimes(21.4225, 39.8262);
+                }
+            );
+        } else {
+            document.getElementById('location').innerText = "مكة المكرمة (افتراضي)";
+            fetchPrayerTimes(21.4225, 39.8262);
+        }
+    }
+
+    // 2. Fetch Data from Aladhan API
+    async function fetchPrayerTimes(lat, lon) {
+        try {
+            const response = await fetch(`https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=4`);
+            const data = await response.json();
+            
+            if (data.code === 200) {
+                const timings = data.data.timings;
+                const dateData = data.data.date;
+                
+                prayerTimings = {
+                    Fajr: timings.Fajr,
+                    Sunrise: timings.Sunrise,
+                    Dhuhr: timings.Dhuhr,
+                    Asr: timings.Asr,
+                    Maghrib: timings.Maghrib,
+                    Isha: timings.Isha
+                };
+
+                // Update Dates
+                document.getElementById('gregorian-date').innerText = dateData.readable;
+                document.getElementById('hijri-date').innerText = `${dateData.hijri.day} ${dateData.hijri.month.ar} ${dateData.hijri.year} هـ`;
+                
+                // Location details
+                if(data.data.meta.timezone) {
+                    document.getElementById('location').innerText = data.data.meta.timezone.replace('_', ' ');
+                }
+
+                renderPrayers();
+                startCountdown();
+            }
+        } catch (err) {
+            document.getElementById('prayers-list').innerHTML = "<div class='loader'>تعذر جلب المواقيت. تحقق من الاتصال بالإنترنت.</div>";
+        }
+    }
+
+    // 3. Render Prayer Cards
+    function renderPrayers() {
+        const listContainer = document.getElementById('prayers-list');
+        listContainer.innerHTML = '';
+
+        for (const [key, time] of Object.entries(prayerTimings)) {
+            const item = document.createElement('div');
+            item.className = `prayer-item`;
+            item.id = `prayer-${key}`;
+            
+            item.innerHTML = `
+                <span class="prayer-name">${prayerNames[key]}</span>
+                <span class="prayer-time">${formatTime(time)}</span>
+            `;
+            listContainer.appendChild(item);
+        }
+    }
+
+    // Helper: Convert 24h to 12h Format
+    function formatTime(time24) {
+        let [hours, minutes] = time24.split(':');
+        hours = parseInt(hours);
+        const period = hours >= 12 ? 'م' : 'ص';
+        hours = hours % 12 || 12;
+        return `${hours}:${minutes} ${period}`;
+    }
+
+    // 4. Calculate Countdown & Highlight Active Prayer
+    function startCountdown() {
+        setInterval(() => {
+            const now = new Date();
+            let minDiff = Infinity;
+            let upcoming = null;
+
+            // Clear previous highlights
+            document.querySelectorAll('.prayer-item').forEach(el => el.classList.remove('active'));
+
+            for (const [key, time] of Object.entries(prayerTimings)) {
+                const [hours, minutes] = time.split(':');
+                const prayerTime = new Date();
+                prayerTime.setHours(hours, minutes, 0, 0);
+
+                let diff = prayerTime - now;
+
+                if (diff > 0 && diff < minDiff) {
+                    minDiff = diff;
+                    upcoming = key;
+                }
+            }
+
+            // If all prayers today have passed, next is Fajr tomorrow
+            if (!upcoming) {
+                upcoming = 'Fajr';
+                const [hours, minutes] = prayerTimings['Fajr'].split(':');
+                const fajrTomorrow = new Date();
+                fajrTomorrow.setDate(fajrTomorrow.getDate() + 1);
+                fajrTomorrow.setHours(hours, minutes, 0, 0);
+                minDiff = fajrTomorrow - now;
+            }
+
+            // Update Next Prayer Info
+            document.getElementById('next-prayer-name').innerText = prayerNames[upcoming];
+            document.getElementById('next-prayer-time').innerText = formatTime(prayerTimings[upcoming]);
+            
+            // Highlight Next Prayer in list
+            const activeCard = document.getElementById(`prayer-${upcoming}`);
+            if(activeCard) activeCard.classList.add('active');
+
+            // Format Countdown
+            const hoursLeft = Math.floor((minDiff / (1000 * 60 * 60)) % 24);
+            const minutesLeft = Math.floor((minDiff / (1000 * 60)) % 60);
+            const secondsLeft = Math.floor((minDiff / 1000) % 60);
+
+            document.getElementById('countdown').innerText = 
+                `متبقي: ${String(hoursLeft).padStart(2, '0')}:${String(minutesLeft).padStart(2, '0')}:${String(secondsLeft).padStart(2, '0')}`;
+
+        }, 1000);
+    }
+
+    // Start App
+    initApp();
+</script>
+
+</body>
+</html>
